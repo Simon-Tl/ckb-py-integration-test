@@ -1,0 +1,130 @@
+name: CKB Start Validation
+
+on:
+  push:
+    branches:
+      - ckb-compatible
+  pull_request:
+    branches:
+      - ckb-compatible
+  workflow_dispatch: 
+
+jobs:
+  ckb-start-validation:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-12, macos-14, ubuntu-22.04,ubuntu-22.04-arm64, centos-8, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: ubuntu-22.04-arm64
+            arch: arm64
+            runs-on: [self-hosted,ubuntu-22.04-arm64,ARM64,Linux]
+          - os: macos-12
+            arch: x86
+          - os: macos-14
+            arch: arm64
+          - os: centos-8
+            arch: x64
+            runs-on: [self-hosted,centos8,X64,Linux]
+          - os: windows-latest
+            arch: x64
+            
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set CKB Release URL
+        run: |
+          echo "CKB_RELEASE_URL=https://github.com/nervosnetwork/ckb/releases/download/v0.119.0-rc1" >> $GITHUB_ENV
+        shell: bash  # Linux 和 macOS 使用 bash
+
+      - name: Set CKB Release URL for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CKB_RELEASE_URL = "https://github.com/nervosnetwork/ckb/releases/download/v0.119.0-rc1"
+          # 确保 GITHUB_ENV 被正确设置
+          if ($env:GITHUB_ENV) {
+              echo "CKB_RELEASE_URL=$env:CKB_RELEASE_URL" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+              Write-Error "GITHUB_ENV is not set."
+          }
+
+      - name: Download and extract CKB (Linux and macOS)
+        if: runner.os != 'Windows'  
+        run: |
+          case "${{ matrix.os }}-${{ matrix.arch }}" in
+            "ubuntu-22.04-x64")
+              curl -LO $CKB_RELEASE_URL/ckb_v0.119.0-rc1_x86_64-unknown-linux-gnu.tar.gz
+              tar -xzf ckb_v0.119.0-rc1_x86_64-unknown-linux-gnu.tar.gz
+              ;;
+            "ubuntu-22.04-arm64-arm64")
+              curl -LO $CKB_RELEASE_URL/ckb_v0.119.0-rc1_aarch64-unknown-linux-gnu.tar.gz
+              tar -xzf ckb_v0.119.0-rc1_aarch64-unknown-linux-gnu.tar.gz
+              ;;
+            "macos-12-x86")
+              curl -LO $CKB_RELEASE_URL/ckb_v0.119.0-rc1_x86_64-apple-darwin-portable.zip
+              unzip ckb_v0.119.0-rc1_x86_64-apple-darwin-portable.zip
+              ;;
+            "macos-14-arm64")
+              curl -LO $CKB_RELEASE_URL/ckb_v0.119.0-rc1_aarch64-apple-darwin-portable.zip
+              unzip ckb_v0.119.0-rc1_aarch64-apple-darwin-portable.zip
+              ;;
+            "centos-8-x64")
+              curl -LO $CKB_RELEASE_URL/ckb_v0.119.0-rc1_x86_64-unknown-centos-gnu-portable.tar.gz
+              tar -xzf ckb_v0.119.0-rc1_x86_64-unknown-centos-gnu-portable.tar.gz
+              ;;
+            *)
+              echo "Unsupported OS or architecture: ${{ matrix.os }} ${{ matrix.arch }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Download and extract CKB (Windows)
+        if: runner.os == 'Windows'  
+        run: |
+          curl -LO $env:CKB_RELEASE_URL/ckb_v0.119.0-rc1_x86_64-pc-windows-msvc.zip
+          Expand-Archive -Path ckb_v0.119.0-rc1_x86_64-pc-windows-msvc.zip -DestinationPath .
+
+      - name: Run CKB node (Linux and macOS)
+        if: runner.os != 'Windows'  
+        run: |
+      
+          echo "Current OS: $(uname -s)"
+          echo "Current Architecture: $(uname -m)"
+
+          case "${{ matrix.os }}" in
+            "ubuntu-22.04")
+              ./ckb_v0.119.0-rc1_x86_64-unknown-linux-gnu/ckb init 
+              ;;
+            "ubuntu-22.04-arm64")
+              ./ckb_v0.119.0-rc1_aarch64-unknown-linux-gnu/ckb init 
+              ;;
+            "centos-8")
+              ./ckb_v0.119.0-rc1_x86_64-unknown-centos-gnu-portable/ckb init 
+              ;;
+            "macos-12")
+              ./ckb_v0.119.0-rc1_x86_64-apple-darwin-portable/ckb init 
+              ;;
+            "macos-14")
+              ./ckb_v0.119.0-rc1_aarch64-apple-darwin-portable/ckb init 
+              ;;              
+            *)
+              echo "Unsupported OS: ${{ matrix.os }}"
+              exit 1
+              ;;
+          esac
+
+
+      - name: Run CKB node (Windows)
+        if: runner.os == 'Windows'  
+        run: |
+          powershell -Command "./ckb_v0.119.0-rc1_x86_64-pc-windows-msvc/ckb.exe init"
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "CKB init failed."
+          }
+        shell: pwsh
